@@ -1,0 +1,111 @@
+from fastapi import FastAPI, File, UploadFile, HTTPException, status
+from fastapi.responses import JSONResponse
+import ollama
+import os
+import json
+import logging
+from pathlib import Path
+from typing import List, Dict
+
+# Configura logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Processador de Cupons Fiscais - IA Vision",
+    description="Extrai apenas nome do estabelecimento, CNPJ, itens e valor total",
+    version="1.1.0"
+)
+
+# Configurações
+MODEL = "qwen2.5vl:7b"  # ou "qwen2.5vl:3b" para mais leve
+TEMP_DIR = Path("/tmp")
+TEMP_IMAGE_PATH = TEMP_DIR / "temp_cupom.jpg"
+
+# Prompt otimizado e focado só no que você quer
+PROMPT = """
+Você é especialista em extrair dados de cupons fiscais brasileiros (NFC-e).
+Analise a imagem e extraia SOMENTE as informações abaixo como JSON válido.
+
+Extraia EXATAMENTE o que está escrito, sem adivinhar nem corrigir valores ou nomes.
+Preste atenção em letras parecidas (B vs O/D, 0 vs O, 1 vs l/I) e números decimais.
+Ignore ruído, transparência do papel, texto do verso ou qualquer coisa fora da lista.
+
+Estrutura exata do JSON (não adicione nem remova campos):
+
+{
+  "nome_estabelecimento": "string (razão social ou nome fantasia)",
+  "cnpj": "string (ex: 08.616.988/0005-53)",
+  "itens": [
+    {
+      "descricao": "string (nome do produto)",
+      "quantidade": "string (ex: 0,280Kg ou 1UN ou 1 caixa)",
+      "preco_unitario": number,
+      "preco_total": number
+    }
+  ],
+  "valor_total": number
+}
+
+Responda APENAS com o JSON válido, sem texto antes ou depois.
+Se algum campo não existir, use null ou lista vazia.
+"""
+
+@app.post("/processar_cupom", summary="Processa imagem de cupom e retorna dados essenciais")
+async def processar_cupom(file: UploadFile = File(...)):
+    """
+    Recebe imagem de cupom fiscal e retorna JSON com:
+    - Nome do estabelecimento + CNPJ
+    - Itens (descrição, quantidade, preço unitário, preço total)
+    - Valor total
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Arquivo deve ser uma imagem")
+
+    try:
+        # Salva temporariamente
+        with open(TEMP_IMAGE_PATH, "wb") as buffer:
+            buffer.write(await file.read())
+
+        logger.info(f"Imagem salva: {TEMP_IMAGE_PATH}")
+
+        response = ollama.chat(
+            model=MODEL,
+            messages=[{
+                'role': 'user',
+                'content': PROMPT,
+                'images': [str(TEMP_IMAGE_PATH)]
+            }]
+        )
+
+        conteudo = response['message']['content'].strip()
+
+        # Remove blocos ```json
+        if conteudo.startswith("```json") and conteudo.endswith("```"):
+            conteudo = conteudo[7:-3].strip()
+
+        try:
+            resultado = json.loads(conteudo)
+        except json.JSONDecodeError:
+            resultado = {"raw_response": conteudo, "error": "Não foi possível parsear JSON"}
+
+        # Validação simples de soma (opcional, mas útil)
+        if "itens" in resultado and "valor_total" in resultado:
+            soma_calculada = sum(item.get("preco_total", 0) for item in resultado["itens"])
+            if abs(soma_calculada - resultado["valor_total"]) > 0.01:
+                resultado["aviso_soma"] = f"Soma calculada dos itens ({soma_calculada}) difere do total declarado ({resultado['valor_total']})"
+
+        return JSONResponse(content=resultado)
+
+    except Exception as e:
+        logger.error(f"Erro ao processar: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+    finally:
+        if TEMP_IMAGE_PATH.exists():
+            TEMP_IMAGE_PATH.unlink()
+            logger.info("Arquivo temporário removido")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

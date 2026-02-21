@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+pydantic
+requests
+pandas
+pillow
+opencv-python-headless
+easyocr
+ollama
+PyMuPDF
+openpyxl
