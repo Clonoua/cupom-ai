@@ -31,7 +31,7 @@ Extraia EXATAMENTE o que está escrito, sem adivinhar nem corrigir valores ou no
 Preste atenção em letras parecidas (B vs O/D, 0 vs O, 1 vs l/I) e números decimais.
 Ignore ruído, transparência do papel, texto do verso ou qualquer coisa fora da lista.
 
-Estrutura exata do JSON (não adicione nem remova campos):
+Estrutura exata do JSON (não adicione nem remova campos, se não houver parcelamento retorne "A vista"):
 
 {
   "nome_estabelecimento": "string (razão social ou nome fantasia)",
@@ -44,7 +44,8 @@ Estrutura exata do JSON (não adicione nem remova campos):
       "preco_total": number
     }
   ],
-  "valor_total": number
+  "valor_total": number,
+  "parcelamento": number
 }
 
 Responda APENAS com o JSON válido, sem texto antes ou depois.
