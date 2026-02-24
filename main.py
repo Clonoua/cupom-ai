@@ -83,7 +83,7 @@ async def processar_cupom(file: UploadFile = File(...)):
         logger.info(f"Resposta bruta do Ollama (primeiros 200 chars): {conteudo[:200]}...")
 
         # Remove blocos markdown comuns que o modelo adiciona
-        if conteudo.startswith("```json
+        if conteudo.startswith("```json"):
             conteudo = conteudo[7:-3].strip()
         elif conteudo.startswith("```") and conteudo.endswith("```"):
             conteudo = conteudo[3:-3].strip()
